@@ -1,6 +1,6 @@
 import React from 'react';
 import ItemList from './components/ItemList';
-import './App.css'; // Для общих стилей, если нужно
+import './App.css';
 
 const App: React.FC = () => {
   return (
