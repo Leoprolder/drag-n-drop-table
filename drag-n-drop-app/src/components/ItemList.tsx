@@ -18,7 +18,7 @@ const ItemList: React.FC = () => {
     const [selectedItems, setSelectedItems] = useState<Set<number>>(new Set());
     const [draggedItem, setDraggedItem] = useState<Item | null>(null);
 
-    const observer = useRef<IntersectionObserver>();
+    const observer = useRef<IntersectionObserver>(null);
     const listRef = useRef<HTMLDivElement>(null);
 
     const isInitialDataLoaded = useRef(false);
