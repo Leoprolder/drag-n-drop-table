@@ -1,0 +1,90 @@
+.container {
+  width: 80%;
+  margin: 20px auto;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  padding: 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+h1 {
+  text-align: center;
+  color: #333;
+  margin-bottom: 20px;
+}
+
+.searchInput {
+  width: calc(100% - 20px);
+  padding: 10px;
+  margin-bottom: 20px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 16px;
+  box-sizing: border-box; /* Учитываем padding в ширине */
+}
+
+.headerRow {
+  display: grid;
+  grid-template-columns: 30px 1fr 2fr;
+  padding: 10px;
+  background-color: #f0f0f0;
+  border-bottom: 1px solid #eee;
+  font-weight: bold;
+}
+
+.itemRow {
+  display: grid;
+  grid-template-columns: 30px 1fr 2fr;
+  padding: 10px;
+  border-bottom: 1px solid #eee;
+  background-color: #fff;
+  cursor: grab;
+  transition: background-color 0.1s ease-in-out; /* Плавный переход при наведении */
+}
+
+.itemRow:last-child {
+  border-bottom: none; /* Убираем нижнюю границу у последнего элемента */
+}
+
+.itemRow:hover {
+  background-color: #f9f9f9;
+}
+
+.itemRow.selected {
+  background-color: #e6f7ff;
+}
+
+.itemRow.dragging {
+  opacity: 0.5; /* Уменьшаем прозрачность перетаскиваемого элемента */
+  border: 2px dashed #007bff; /* Добавляем пунктирную границу */
+}
+
+.itemRow.dragOver {
+  background-color: #d1e7ff; /* Цвет фона при наведении перетаскиваемого элемента */
+}
+
+.checkbox {
+  margin-right: 10px;
+  align-self: center; /* Выравнивание по центру */
+}
+
+.itemId, .itemValue {
+  padding: 0 5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  align-self: center; /* Выравнивание по центру */
+}
+
+.loading, .noMoreItems, .noResults {
+  text-align: center;
+  padding: 20px;
+  color: #666;
+}
+
+.itemList {
+  max-height: 500px; /* Ограничиваем высоту для скролла */
+  overflow-y: auto;
+  border: 1px solid #eee;
+  border-radius: 4px;
+}
