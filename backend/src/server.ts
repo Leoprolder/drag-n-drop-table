@@ -3,11 +3,13 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 
 const app = express();
-const PORT = 5000;
+const PORT = process.env.PORT || 5000; 
 
 // Middleware
 app.use(cors({
-    origin: 'http://localhost:5173'
+    origin: 'https://leoprolder.github.io',
+    methods: ['GET', 'POST', 'PUT', 'DELETE'],
+    allowedHeaders: ['Content-Type'],
 }));
 app.use(bodyParser.json());
 
@@ -143,8 +145,6 @@ app.get('/api/initial-state', (req, res) => {
     });
 });
 
-
 app.listen(PORT, () => {
-    console.log(`Backend server running on http://localhost:${PORT}`);
-    console.log(`Generated ${ALL_ITEMS.length} dummy items.`);
+    console.log(`Server is running on http://localhost:${PORT}`);
 });

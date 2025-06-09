@@ -6,7 +6,7 @@ interface Item {
     value: number;
 }
 
-const API_BASE_URL = 'http://localhost:5000/api';
+const API_BASE_URL = 'https://drag-n-drop-table.onrender.com/api';
 const ITEMS_PER_PAGE = 20;
 
 const ItemList: React.FC = () => {
