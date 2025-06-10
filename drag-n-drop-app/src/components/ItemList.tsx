@@ -74,6 +74,11 @@ const ItemList: React.FC = () => {
 
             if (searchTerm === '') {
                 try {
+                    await fetch(`${API_BASE_URL}/reset-sort-order`, {
+                        method: 'POST',
+                    });
+                    console.log('Sort order reset on backend due to search clear.');
+
                     const response = await fetch(`${API_BASE_URL}/initial-state`);
                     const data = await response.json();
                     setItems(data.initialItems);
@@ -81,7 +86,7 @@ const ItemList: React.FC = () => {
                     setHasMore(data.hasMore);
                     isInitialDataLoaded.current = true;
                 } catch (error) {
-                    console.error("Failed to load initial state:", error);
+                    console.error("Failed to load initial state or reset sort:", error);
                     setHasMore(false);
                 } finally {
                     setLoading(false);
