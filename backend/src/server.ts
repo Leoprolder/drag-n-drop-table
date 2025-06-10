@@ -24,12 +24,14 @@ const ALL_ITEMS: Item[] = Array.from({ length: 1_000_000 }, (_, i) => ({
 
 interface ServerState {
     selectedItemIds: Set<number>;
-    itemOrder: number[];
+    dragDropOrder: Map<string, number[]>;
+    lastActiveSearchTerm: string;
 }
 
 const serverState: ServerState = {
     selectedItemIds: new Set<number>(),
-    itemOrder: []
+    dragDropOrder: new Map<string, number[]>(),
+    lastActiveSearchTerm: ''
 };
 
 const getItemById = (id: number): Item | undefined => {
@@ -39,40 +41,45 @@ const getItemById = (id: number): Item | undefined => {
     return undefined;
 };
 
+const applyOrder = (items: Item[], orderIds: number[]): Item[] => {
+    const orderedMap = new Map<number, Item>();
+    items.forEach(item => orderedMap.set(item.id, item));
+    const result: Item[] = [];
+    const seenIds = new Set<number>();
+    for (const id of orderIds) {
+        const item = orderedMap.get(id);
+        if (item) {
+            result.push(item);
+            seenIds.add(item.id);
+        }
+    }
+    for (const item of items) {
+        if (!seenIds.has(item.id)) {
+            result.push(item);
+        }
+    }
+    return result;
+};
+
 app.get('/api/items', (req, res) => {
     const page = parseInt(req.query.page as string || '0');
     const limit = parseInt(req.query.limit as string || '20');
     const searchTerm = (req.query.search as string || '').toLowerCase();
-
-    let workingItems: Item[] = [...ALL_ITEMS];
-
+    let currentItems: Item[] = [...ALL_ITEMS];
     if (searchTerm) {
-        workingItems = workingItems.filter(item => item.value.toString().includes(searchTerm));
+        currentItems = currentItems.filter(item => item.value.toString().includes(searchTerm));
     }
-
-    if (page === 0 && !searchTerm && serverState.itemOrder.length > 0) {
-        const orderedSegment: Item[] = [];
-        const seenIds = new Set<number>();
-
-        for (const id of serverState.itemOrder) {
-            const item = getItemById(id);
-            if (item) {
-                orderedSegment.push(item);
-                seenIds.add(item.id);
-            }
-        }
-        const remainingItems = workingItems.filter(item => !seenIds.has(item.id));
-        workingItems = [...orderedSegment, ...remainingItems];
+    const activeOrder = serverState.dragDropOrder.get(searchTerm);
+    if (activeOrder && activeOrder.length > 0) {
+        currentItems = applyOrder(currentItems, activeOrder);
     }
-
     const startIndex = page * limit;
     const endIndex = startIndex + limit;
-    const paginatedItems = workingItems.slice(startIndex, endIndex);
-
+    const paginatedItems = currentItems.slice(startIndex, endIndex);
     res.json({
         items: paginatedItems,
-        total: workingItems.length,
-        hasMore: endIndex < workingItems.length
+        total: currentItems.length,
+        hasMore: endIndex < currentItems.length
     });
 });
 
@@ -88,55 +95,52 @@ app.post('/api/save-selection', (req, res) => {
 });
 
 app.post('/api/save-order', (req, res) => {
-    const { order } = req.body;
-    if (Array.isArray(order)) {
-        serverState.itemOrder = order;
-        console.log('Item order saved:', serverState.itemOrder.slice(0, 50), '...');
+    const { order, searchTerm } = req.body;
+    if (Array.isArray(order) && typeof searchTerm === 'string') {
+        serverState.dragDropOrder.set(searchTerm.toLowerCase(), order);
+        console.log(`Item order saved for search term "${searchTerm}":`, order.slice(0, 50), '...');
         res.status(200).json({ message: 'Item order saved successfully.' });
     } else {
-        res.status(400).json({ message: 'Invalid data format for order.' });
+        res.status(400).json({ message: 'Invalid data format for order or searchTerm.' });
     }
 });
 
 app.get('/api/initial-state', (req, res) => {
     const limit = 20;
-    const initialOrderedItems: Item[] = [];
-    const seenIdsInOrder = new Set<number>();
-
-    for (const id of serverState.itemOrder) {
-        const item = getItemById(id);
-        if (item && initialOrderedItems.length < limit) {
-            initialOrderedItems.push(item);
-            seenIdsInOrder.add(item.id);
-        } else if (initialOrderedItems.length >= limit) {
-            break;
-        }
+    let initialItemsToReturn: Item[] = [];
+    let initialSearchTerm = serverState.lastActiveSearchTerm;
+    let itemsForInitialLoad: Item[] = [...ALL_ITEMS];
+    if (initialSearchTerm) {
+        itemsForInitialLoad = itemsForInitialLoad.filter(item => item.value.toString().includes(initialSearchTerm.toLowerCase()));
     }
-
-    if (initialOrderedItems.length < limit) {
-        for (const item of ALL_ITEMS) {
-            if (initialOrderedItems.length >= limit) break;
-            if (!seenIdsInOrder.has(item.id)) {
-                initialOrderedItems.push(item);
-                seenIdsInOrder.add(item.id);
-            }
-        }
+    const activeOrder = serverState.dragDropOrder.get(initialSearchTerm.toLowerCase());
+    if (activeOrder && activeOrder.length > 0) {
+        itemsForInitialLoad = applyOrder(itemsForInitialLoad, activeOrder);
     }
-    
-    const remainingCount = ALL_ITEMS.length - initialOrderedItems.length;
-    const hasMore = remainingCount > 0;
-
+    initialItemsToReturn = itemsForInitialLoad.slice(0, limit);
     res.json({
         selectedItemIds: Array.from(serverState.selectedItemIds),
-        initialItems: initialOrderedItems,
-        hasMore: hasMore
+        initialItems: initialItemsToReturn,
+        lastActiveSearchTerm: initialSearchTerm,
+        hasMore: itemsForInitialLoad.length > limit
     });
 });
 
+app.post('/api/set-active-search-term', (req, res) => {
+    const { searchTerm } = req.body;
+    if (typeof searchTerm === 'string') {
+        serverState.lastActiveSearchTerm = searchTerm.toLowerCase();
+        console.log('Last active search term set to:', serverState.lastActiveSearchTerm);
+        res.status(200).json({ message: 'Last active search term updated.' });
+    } else {
+        res.status(400).json({ message: 'Invalid data format for searchTerm.' });
+    }
+});
+
 app.post('/api/reset-sort-order', (req, res) => {
-    serverState.itemOrder = [];
-    console.log('Sort order reset.');
-    res.status(200).json({ message: 'Sort order reset successfully.' });
+    serverState.dragDropOrder.delete('');
+    console.log('Global sort order reset.');
+    res.status(200).json({ message: 'Global sort order reset successfully.' });
 });
 
 app.listen(PORT, () => {
