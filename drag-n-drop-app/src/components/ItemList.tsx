@@ -8,6 +8,7 @@ interface Item {
 
 const API_BASE_URL = 'https://drag-n-drop-table.onrender.com/api';
 const ITEMS_PER_PAGE = 20;
+const RELOAD_INTERVAL_MS = 10 * 60 * 1000;
 
 const ItemList: React.FC = () => {
     const [items, setItems] = useState<Item[]>([]);
@@ -181,6 +182,17 @@ const ItemList: React.FC = () => {
             saveSelection();
         }
     }, [selectedItems]);
+
+    useEffect(() => {
+        const intervalId = setInterval(() => {
+            console.log('Reloading page to keep backend awake...');
+            window.location.reload();
+        }, RELOAD_INTERVAL_MS);
+
+        // Cleanup the interval when the component unmounts
+        return () => clearInterval(intervalId);
+    }, []); // Empty dependency array means this effect runs once on mount and cleans up on unmount
+
 
     const handleCheckboxChange = useCallback((id: number) => {
         setSelectedItems(prevSelected => {
