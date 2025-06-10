@@ -22,6 +22,7 @@ const ItemList: React.FC = () => {
     const listRef = useRef<HTMLDivElement>(null);
 
     const isInitialDataLoaded = useRef(false);
+    const isSearchTermInitialized = useRef(false);
 
     const lastItemRef = useCallback((node: HTMLDivElement | null) => {
         if (loading) return;
@@ -70,31 +71,70 @@ const ItemList: React.FC = () => {
     useEffect(() => {
         const loadData = async () => {
             setLoading(true);
-            setPage(0);
+            setPage(0); // Always reset page to 0 on new search/initialization
 
-            if (searchTerm === '') {
+            if (searchTerm === '' && !isSearchTermInitialized.current) {
+                // Initial load of the component without search term or after clearing search
+                try {
+                    // Fetch initial state, including lastActiveSearchTerm
+                    const response = await fetch(`${API_BASE_URL}/initial-state`);
+                    const data = await response.json();
+
+                    setItems(data.initialItems);
+                    setSelectedItems(new Set(data.selectedItemIds));
+                    setHasMore(data.hasMore);
+
+                    // Initialize searchTerm from backend
+                    setSearchTerm(data.lastActiveSearchTerm);
+                    isSearchTermInitialized.current = true; // Mark searchTerm as initialized
+                    isInitialDataLoaded.current = true; // Mark primary data as loaded
+
+                } catch (error) {
+                    console.error("Failed to load initial state:", error);
+                    setHasMore(false);
+                } finally {
+                    setLoading(false);
+                }
+            } else if (searchTerm === '' && isSearchTermInitialized.current) {
+                // If searchTerm is cleared by the user after initial load
+                // Reset global sort order on backend first
                 try {
                     await fetch(`${API_BASE_URL}/reset-sort-order`, {
                         method: 'POST',
                     });
-                    console.log('Sort order reset on backend due to search clear.');
+                    console.log('Global sort order reset on backend due to search clear.');
 
+                    // Then reload initial state (which will now be without global sort)
                     const response = await fetch(`${API_BASE_URL}/initial-state`);
                     const data = await response.json();
+
                     setItems(data.initialItems);
                     setSelectedItems(new Set(data.selectedItemIds));
                     setHasMore(data.hasMore);
-                    isInitialDataLoaded.current = true;
+                    // lastActiveSearchTerm will be empty, as expected
                 } catch (error) {
                     console.error("Failed to load initial state or reset sort:", error);
                     setHasMore(false);
                 } finally {
                     setLoading(false);
                 }
-            } else {
-                setItems([]);
+            }
+            else {
+                // If there is a searchTerm (not empty), perform search and load first page of results
+                setItems([]); // Clear current items before loading new filtered data
                 fetchPaginatedItems(0, searchTerm);
                 isInitialDataLoaded.current = true;
+            }
+
+            // Send current active search term to backend (debounced)
+            try {
+                await fetch(`${API_BASE_URL}/set-active-search-term`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ searchTerm: searchTerm })
+                });
+            } catch (error) {
+                console.error("Failed to set active search term:", error);
             }
         };
 
@@ -208,7 +248,7 @@ const ItemList: React.FC = () => {
                             headers: {
                                 'Content-Type': 'application/json',
                             },
-                            body: JSON.stringify({ order: newItems.map(item => item.id) }),
+                            body: JSON.stringify({ order: newItems.map(item => item.id), searchTerm: searchTerm }),
                         });
                     } catch (error) {
                         console.error("Failed to save order:", error);
@@ -219,7 +259,7 @@ const ItemList: React.FC = () => {
             return newItems;
         });
         setDraggedItem(null);
-    }, [draggedItem]);
+    }, [draggedItem, searchTerm]);
 
     const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchTerm(e.target.value);
