@@ -24,8 +24,8 @@ const ALL_ITEMS: Item[] = Array.from({ length: 1_000_000 }, (_, i) => ({
 
 interface ServerState {
     selectedItemIds: Set<number>;
-    dragDropOrder: Map<string, number[]>;
-    lastActiveSearchTerm: string;
+    dragDropOrder: Map<string, number[]>; // Key: searchTerm (empty string for global), Value: Array of IDs
+    lastActiveSearchTerm: string; // Last active search term
 }
 
 const serverState: ServerState = {
@@ -107,8 +107,8 @@ app.post('/api/save-order', (req, res) => {
 
 app.get('/api/initial-state', (req, res) => {
     const limit = 20;
-    let initialItemsToReturn: Item[] = [];
-    let initialSearchTerm = serverState.lastActiveSearchTerm;
+    const initialSearchTerm = serverState.lastActiveSearchTerm; // Get last active search from state
+
     let itemsForInitialLoad: Item[] = [...ALL_ITEMS];
     if (initialSearchTerm) {
         itemsForInitialLoad = itemsForInitialLoad.filter(item => item.value.toString().includes(initialSearchTerm.toLowerCase()));
@@ -117,7 +117,9 @@ app.get('/api/initial-state', (req, res) => {
     if (activeOrder && activeOrder.length > 0) {
         itemsForInitialLoad = applyOrder(itemsForInitialLoad, activeOrder);
     }
-    initialItemsToReturn = itemsForInitialLoad.slice(0, limit);
+
+    const initialItemsToReturn = itemsForInitialLoad.slice(0, limit);
+
     res.json({
         selectedItemIds: Array.from(serverState.selectedItemIds),
         initialItems: initialItemsToReturn,
@@ -138,7 +140,7 @@ app.post('/api/set-active-search-term', (req, res) => {
 });
 
 app.post('/api/reset-sort-order', (req, res) => {
-    serverState.dragDropOrder.delete('');
+    serverState.dragDropOrder.delete(''); // Reset only global order by deleting the key for empty string
     console.log('Global sort order reset.');
     res.status(200).json({ message: 'Global sort order reset successfully.' });
 });
