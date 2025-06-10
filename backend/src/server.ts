@@ -3,11 +3,10 @@ import cors from 'cors';
 import bodyParser from 'body-parser';
 
 const app = express();
-const PORT = process.env.PORT || 5000; 
+const PORT = process.env.PORT || 5000;
 
-// Middleware
 app.use(cors({
-    origin: 'https://leoprolder.github.io',
+    origin: 'https://<ВАШ_USERNAME>.github.io',
     methods: ['GET', 'POST', 'PUT', 'DELETE'],
     allowedHeaders: ['Content-Type'],
 }));
@@ -33,58 +32,47 @@ const serverState: ServerState = {
     itemOrder: []
 };
 
+const getItemById = (id: number): Item | undefined => {
+    if (id > 0 && id <= ALL_ITEMS.length) {
+        return ALL_ITEMS[id - 1];
+    }
+    return undefined;
+};
+
 app.get('/api/items', (req, res) => {
     const page = parseInt(req.query.page as string || '0');
     const limit = parseInt(req.query.limit as string || '20');
     const searchTerm = (req.query.search as string || '').toLowerCase();
-    const sortedIdsParam = req.query.sortedIds as string;
 
-    let filteredItems: Item[] = [];
+    let workingItems: Item[] = [...ALL_ITEMS];
 
     if (searchTerm) {
-        filteredItems = ALL_ITEMS.filter(item => item.value.toString().includes(searchTerm));
-    } else {
-        filteredItems = [...ALL_ITEMS];
+        workingItems = workingItems.filter(item => item.value.toString().includes(searchTerm));
     }
 
     if (page === 0 && !searchTerm && serverState.itemOrder.length > 0) {
-        const itemsInOrder = serverState.itemOrder
-            .map(id => ALL_ITEMS.find(item => item.id === id))
-            .filter((item): item is Item => item !== undefined);
-
-        const remainingItems = filteredItems.filter(item => !serverState.itemOrder.includes(item.id));
-        filteredItems = [...itemsInOrder, ...remainingItems];
-    }
-    
-    if (page === 0 && !searchTerm && serverState.itemOrder.length > 0) {
-        const initialOrderedItems: Item[] = [];
+        const orderedSegment: Item[] = [];
         const seenIds = new Set<number>();
 
         for (const id of serverState.itemOrder) {
-            const item = ALL_ITEMS[id - 1];
-            if (item && initialOrderedItems.length < limit) {
-                initialOrderedItems.push(item);
+            const item = getItemById(id);
+            if (item) {
+                orderedSegment.push(item);
                 seenIds.add(item.id);
-            } else if (initialOrderedItems.length >= limit) {
-                break;
             }
         }
-        
-        const remainingItemsForPage = filteredItems.filter(item => !seenIds.has(item.id))
-            .slice(0, limit - initialOrderedItems.length);
-        
-        filteredItems = [...initialOrderedItems, ...remainingItemsForPage];
+        const remainingItems = workingItems.filter(item => !seenIds.has(item.id));
+        workingItems = [...orderedSegment, ...remainingItems];
     }
-
 
     const startIndex = page * limit;
     const endIndex = startIndex + limit;
-    const paginatedItems = filteredItems.slice(startIndex, endIndex);
+    const paginatedItems = workingItems.slice(startIndex, endIndex);
 
     res.json({
         items: paginatedItems,
-        total: filteredItems.length,
-        hasMore: endIndex < filteredItems.length
+        total: workingItems.length,
+        hasMore: endIndex < workingItems.length
     });
 });
 
@@ -111,40 +99,47 @@ app.post('/api/save-order', (req, res) => {
 });
 
 app.get('/api/initial-state', (req, res) => {
-    const orderedItemsForInitialLoad: Item[] = [];
     const limit = 20;
+    const initialOrderedItems: Item[] = [];
+    const seenIdsInOrder = new Set<number>();
 
-    if (serverState.itemOrder.length > 0) {
-        for (let i = 0; i < Math.min(limit, serverState.itemOrder.length); i++) {
-            const itemId = serverState.itemOrder[i];
-            const item = ALL_ITEMS[itemId - 1];
-            if (item) {
-                orderedItemsForInitialLoad.push(item);
-            }
+    for (const id of serverState.itemOrder) {
+        const item = getItemById(id);
+        if (item && initialOrderedItems.length < limit) {
+            initialOrderedItems.push(item);
+            seenIdsInOrder.add(item.id);
+        } else if (initialOrderedItems.length >= limit) {
+            break;
         }
     }
 
-    if (orderedItemsForInitialLoad.length < limit) {
-        const existingIds = new Set(orderedItemsForInitialLoad.map(item => item.id));
-        let count = orderedItemsForInitialLoad.length;
+    if (initialOrderedItems.length < limit) {
         for (const item of ALL_ITEMS) {
-            if (!existingIds.has(item.id) && count < limit) {
-                orderedItemsForInitialLoad.push(item);
-                count++;
-            } else if (count >= limit) {
-                break;
+            if (initialOrderedItems.length >= limit) break;
+            if (!seenIdsInOrder.has(item.id)) {
+                initialOrderedItems.push(item);
+                seenIdsInOrder.add(item.id);
             }
         }
     }
-
+    
+    const remainingCount = ALL_ITEMS.length - initialOrderedItems.length;
+    const hasMore = remainingCount > 0;
 
     res.json({
         selectedItemIds: Array.from(serverState.selectedItemIds),
-        initialItems: orderedItemsForInitialLoad,
-        hasMore: ALL_ITEMS.length > limit
+        initialItems: initialOrderedItems,
+        hasMore: hasMore
     });
 });
 
+app.post('/api/reset-sort-order', (req, res) => {
+    serverState.itemOrder = [];
+    console.log('Sort order reset.');
+    res.status(200).json({ message: 'Sort order reset successfully.' });
+});
+
 app.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+    console.log(`Backend server running on http://localhost:${PORT}`);
+    console.log(`Generated ${ALL_ITEMS.length} dummy items.`);
 });
