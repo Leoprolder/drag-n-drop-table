@@ -21,8 +21,9 @@ const ItemList: React.FC = () => {
     const observer = useRef<IntersectionObserver>(null);
     const listRef = useRef<HTMLDivElement>(null);
 
-    const isInitialDataLoaded = useRef(false);
-    const isSearchTermInitialized = useRef(false);
+    // Flags to control useEffect execution order and initial state
+    const hasMounted = useRef(false);
+    const isInitialDataLoadCompleted = useRef(false);
 
     const lastItemRef = useCallback((node: HTMLDivElement | null) => {
         if (loading) return;
@@ -68,65 +69,59 @@ const ItemList: React.FC = () => {
         }
     }, []);
 
+    // Effect for initial load (runs once on component mount)
     useEffect(() => {
-        const loadData = async () => {
+        const loadInitialData = async () => {
             setLoading(true);
-            setPage(0); // Always reset page to 0 on new search/initialization
+            setPage(0); // Ensure page is 0 for initial load
 
-            if (searchTerm === '' && !isSearchTermInitialized.current) {
-                // Initial load of the component without search term or after clearing search
-                try {
-                    // Fetch initial state, including lastActiveSearchTerm
-                    const response = await fetch(`${API_BASE_URL}/initial-state`);
-                    const data = await response.json();
+            try {
+                const response = await fetch(`${API_BASE_URL}/initial-state`);
+                const data = await response.json();
 
-                    setItems(data.initialItems);
-                    setSelectedItems(new Set(data.selectedItemIds));
-                    setHasMore(data.hasMore);
+                setItems(data.initialItems);
+                setSelectedItems(new Set(data.selectedItemIds));
+                setHasMore(data.hasMore);
+                setSearchTerm(data.lastActiveSearchTerm); // Initialize search term from backend
 
-                    // Initialize searchTerm from backend
-                    setSearchTerm(data.lastActiveSearchTerm);
-                    isSearchTermInitialized.current = true; // Mark searchTerm as initialized
-                    isInitialDataLoaded.current = true; // Mark primary data as loaded
+                isInitialDataLoadCompleted.current = true; // Mark as completed
+                hasMounted.current = true; // Component is now fully mounted and initialized
 
-                } catch (error) {
-                    console.error("Failed to load initial state:", error);
-                    setHasMore(false);
-                } finally {
-                    setLoading(false);
-                }
-            } else if (searchTerm === '' && isSearchTermInitialized.current) {
-                // If searchTerm is cleared by the user after initial load
-                // Reset global sort order on backend first
-                try {
-                    await fetch(`${API_BASE_URL}/reset-sort-order`, {
-                        method: 'POST',
-                    });
-                    console.log('Global sort order reset on backend due to search clear.');
+                // After initial load, immediately tell backend what search term is active
+                // This is especially important if data.lastActiveSearchTerm was initially not empty
+                await fetch(`${API_BASE_URL}/set-active-search-term`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ searchTerm: data.lastActiveSearchTerm })
+                });
 
-                    // Then reload initial state (which will now be without global sort)
-                    const response = await fetch(`${API_BASE_URL}/initial-state`);
-                    const data = await response.json();
-
-                    setItems(data.initialItems);
-                    setSelectedItems(new Set(data.selectedItemIds));
-                    setHasMore(data.hasMore);
-                    // lastActiveSearchTerm will be empty, as expected
-                } catch (error) {
-                    console.error("Failed to load initial state or reset sort:", error);
-                    setHasMore(false);
-                } finally {
-                    setLoading(false);
-                }
+            } catch (error) {
+                console.error("Failed to load initial state:", error);
+                setHasMore(false);
+            } finally {
+                setLoading(false);
             }
-            else {
-                // If there is a searchTerm (not empty), perform search and load first page of results
-                setItems([]); // Clear current items before loading new filtered data
-                fetchPaginatedItems(0, searchTerm);
-                isInitialDataLoaded.current = true;
-            }
+        };
 
-            // Send current active search term to backend (debounced)
+        if (!hasMounted.current) { // Run only once on initial mount
+            loadInitialData();
+        }
+    }, []); // Empty dependency array: runs only once on mount
+
+    // Effect for handling search term changes (debounced)
+    useEffect(() => {
+        // Only run this effect if the component has fully mounted AND
+        // the initial data load has completed (meaning searchTerm is reliably initialized).
+        // This prevents it from firing prematurely with default state values.
+        if (!hasMounted.current || !isInitialDataLoadCompleted.current) {
+            return;
+        }
+
+        const handler = setTimeout(async () => {
+            setLoading(true);
+            setPage(0); // Reset page for any new search term or clear
+
+            // IMPORTANT CHANGE: First, update active search term on backend
             try {
                 await fetch(`${API_BASE_URL}/set-active-search-term`, {
                     method: 'POST',
@@ -136,10 +131,24 @@ const ItemList: React.FC = () => {
             } catch (error) {
                 console.error("Failed to set active search term:", error);
             }
-        };
 
-        const handler = setTimeout(() => {
-            loadData();
+            // If search term is cleared, reset global sort order on backend
+            if (searchTerm === '') {
+                try {
+                    await fetch(`${API_BASE_URL}/reset-sort-order`, {
+                        method: 'POST',
+                    });
+                    console.log('Global sort order reset on backend due to search clear.');
+                } catch (error) {
+                    console.error("Failed to reset sort order:", error);
+                }
+            }
+
+            // Then, fetch new data based on current searchTerm (which is now correctly set on backend)
+            setItems([]); // Clear existing items to show new filtered/unfiltered list
+            fetchPaginatedItems(0, searchTerm); // Fetch first page for current searchTerm
+
+            setLoading(false);
         }, 300);
 
         return () => {
@@ -168,7 +177,7 @@ const ItemList: React.FC = () => {
             }
         };
 
-        if (isInitialDataLoaded.current) {
+        if (isInitialDataLoadCompleted.current) {
             saveSelection();
         }
     }, [selectedItems]);
