@@ -22,7 +22,6 @@ const ItemList: React.FC = () => {
     const observer = useRef<IntersectionObserver>(null);
     const listRef = useRef<HTMLDivElement>(null);
 
-    // Flags to control useEffect execution order and initial state
     const hasMounted = useRef(false);
     const isInitialDataLoadCompleted = useRef(false);
 
@@ -70,11 +69,10 @@ const ItemList: React.FC = () => {
         }
     }, []);
 
-    // Effect for initial load (runs once on component mount)
     useEffect(() => {
         const loadInitialData = async () => {
             setLoading(true);
-            setPage(0); // Ensure page is 0 for initial load
+            setPage(0);
 
             try {
                 const response = await fetch(`${API_BASE_URL}/initial-state`);
@@ -83,13 +81,11 @@ const ItemList: React.FC = () => {
                 setItems(data.initialItems);
                 setSelectedItems(new Set(data.selectedItemIds));
                 setHasMore(data.hasMore);
-                setSearchTerm(data.lastActiveSearchTerm); // Initialize search term from backend
+                setSearchTerm(data.lastActiveSearchTerm);
 
-                isInitialDataLoadCompleted.current = true; // Mark as completed
-                hasMounted.current = true; // Component is now fully mounted and initialized
+                isInitialDataLoadCompleted.current = true;
+                hasMounted.current = true;
 
-                // After initial load, immediately tell backend what search term is active
-                // This is especially important if data.lastActiveSearchTerm was initially not empty
                 await fetch(`${API_BASE_URL}/set-active-search-term`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
@@ -104,25 +100,20 @@ const ItemList: React.FC = () => {
             }
         };
 
-        if (!hasMounted.current) { // Run only once on initial mount
+        if (!hasMounted.current) {
             loadInitialData();
         }
-    }, []); // Empty dependency array: runs only once on mount
+    }, []);
 
-    // Effect for handling search term changes (debounced)
     useEffect(() => {
-        // Only run this effect if the component has fully mounted AND
-        // the initial data load has completed (meaning searchTerm is reliably initialized).
-        // This prevents it from firing prematurely with default state values.
         if (!hasMounted.current || !isInitialDataLoadCompleted.current) {
             return;
         }
 
         const handler = setTimeout(async () => {
             setLoading(true);
-            setPage(0); // Reset page for any new search term or clear
+            setPage(0);
 
-            // IMPORTANT CHANGE: First, update active search term on backend
             try {
                 await fetch(`${API_BASE_URL}/set-active-search-term`, {
                     method: 'POST',
@@ -133,7 +124,6 @@ const ItemList: React.FC = () => {
                 console.error("Failed to set active search term:", error);
             }
 
-            // If search term is cleared, reset global sort order on backend
             if (searchTerm === '') {
                 try {
                     await fetch(`${API_BASE_URL}/reset-sort-order`, {
@@ -145,9 +135,8 @@ const ItemList: React.FC = () => {
                 }
             }
 
-            // Then, fetch new data based on current searchTerm (which is now correctly set on backend)
-            setItems([]); // Clear existing items to show new filtered/unfiltered list
-            fetchPaginatedItems(0, searchTerm); // Fetch first page for current searchTerm
+            setItems([]);
+            fetchPaginatedItems(0, searchTerm);
 
             setLoading(false);
         }, 300);
@@ -189,9 +178,8 @@ const ItemList: React.FC = () => {
             window.location.reload();
         }, RELOAD_INTERVAL_MS);
 
-        // Cleanup the interval when the component unmounts
         return () => clearInterval(intervalId);
-    }, []); // Empty dependency array means this effect runs once on mount and cleans up on unmount
+    }, []);
 
 
     const handleCheckboxChange = useCallback((id: number) => {
@@ -244,7 +232,7 @@ const ItemList: React.FC = () => {
 
     const draggedItemRef = useRef<HTMLDivElement | null>(null);
 
-    const handleDrop = useCallback((e: React.DragEvent<HTMLDivElement>, targetItem: Item) => {
+    const handleDrop = useCallback(async (e: React.DragEvent<HTMLDivElement>, targetItem: Item) => {
         e.preventDefault();
         e.currentTarget.classList.remove(styles.dragOver);
 
@@ -253,34 +241,24 @@ const ItemList: React.FC = () => {
             return;
         }
 
-        setItems(prevItems => {
-            const newItems = [...prevItems];
-            const draggedIndex = newItems.findIndex(item => item.id === draggedItem.id);
-            const targetIndex = newItems.findIndex(item => item.id === targetItem.id);
+        try {
+            setLoading(true);
+            await fetch(`${API_BASE_URL}/save-order`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ draggedId: draggedItem.id, targetId: targetItem.id }),
+            });
+            setItems([]);
+            setPage(0);
+            fetchPaginatedItems(0, searchTerm);
 
-            if (draggedIndex !== -1 && targetIndex !== -1) {
-                const [removed] = newItems.splice(draggedIndex, 1);
-                newItems.splice(targetIndex, 0, removed);
-
-                const saveOrder = async () => {
-                    try {
-                        await fetch(`${API_BASE_URL}/save-order`, {
-                            method: 'POST',
-                            headers: {
-                                'Content-Type': 'application/json',
-                            },
-                            body: JSON.stringify({ order: newItems.map(item => item.id), searchTerm: searchTerm }),
-                        });
-                    } catch (error) {
-                        console.error("Failed to save order:", error);
-                    }
-                };
-                saveOrder();
-            }
-            return newItems;
-        });
-        setDraggedItem(null);
-    }, [draggedItem, searchTerm]);
+        } catch (error) {
+            console.error("Failed to save order:", error);
+        } finally {
+            setLoading(false);
+            setDraggedItem(null);
+        }
+    }, [draggedItem, searchTerm, fetchPaginatedItems]);
 
     const handleSearchChange = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
         setSearchTerm(e.target.value);

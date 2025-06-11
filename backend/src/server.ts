@@ -24,13 +24,13 @@ const ALL_ITEMS: Item[] = Array.from({ length: 1_000_000 }, (_, i) => ({
 
 interface ServerState {
     selectedItemIds: Set<number>;
-    dragDropOrder: Map<string, number[]>; // Key: searchTerm (empty string for global), Value: Array of IDs
-    lastActiveSearchTerm: string; // Last active search term
+    globalItemOrder: number[];
+    lastActiveSearchTerm: string;
 }
 
 const serverState: ServerState = {
     selectedItemIds: new Set<number>(),
-    dragDropOrder: new Map<string, number[]>(),
+    globalItemOrder: ALL_ITEMS.map(item => item.id),
     lastActiveSearchTerm: ''
 };
 
@@ -41,16 +41,16 @@ const getItemById = (id: number): Item | undefined => {
     return undefined;
 };
 
-const applyOrder = (items: Item[], orderIds: number[]): Item[] => {
-    const orderedMap = new Map<number, Item>();
-    items.forEach(item => orderedMap.set(item.id, item));
+const applyGlobalOrder = (items: Item[], orderIds: number[]): Item[] => {
+    const itemMap = new Map<number, Item>();
+    items.forEach(item => itemMap.set(item.id, item));
     const result: Item[] = [];
     const seenIds = new Set<number>();
     for (const id of orderIds) {
-        const item = orderedMap.get(id);
+        const item = itemMap.get(id);
         if (item) {
             result.push(item);
-            seenIds.add(item.id);
+            seenIds.add(id);
         }
     }
     for (const item of items) {
@@ -65,21 +65,17 @@ app.get('/api/items', (req, res) => {
     const page = parseInt(req.query.page as string || '0');
     const limit = parseInt(req.query.limit as string || '20');
     const searchTerm = (req.query.search as string || '').toLowerCase();
-    let currentItems: Item[] = [...ALL_ITEMS];
+    let workingItems: Item[] = applyGlobalOrder(ALL_ITEMS, serverState.globalItemOrder);
     if (searchTerm) {
-        currentItems = currentItems.filter(item => item.value.toString().includes(searchTerm));
-    }
-    const activeOrder = serverState.dragDropOrder.get(searchTerm);
-    if (activeOrder && activeOrder.length > 0) {
-        currentItems = applyOrder(currentItems, activeOrder);
+        workingItems = workingItems.filter(item => item.value.toString().includes(searchTerm));
     }
     const startIndex = page * limit;
     const endIndex = startIndex + limit;
-    const paginatedItems = currentItems.slice(startIndex, endIndex);
+    const paginatedItems = workingItems.slice(startIndex, endIndex);
     res.json({
         items: paginatedItems,
-        total: currentItems.length,
-        hasMore: endIndex < currentItems.length
+        total: workingItems.length,
+        hasMore: endIndex < workingItems.length
     });
 });
 
@@ -95,31 +91,31 @@ app.post('/api/save-selection', (req, res) => {
 });
 
 app.post('/api/save-order', (req, res) => {
-    const { order, searchTerm } = req.body;
-    if (Array.isArray(order) && typeof searchTerm === 'string') {
-        serverState.dragDropOrder.set(searchTerm.toLowerCase(), order);
-        console.log(`Item order saved for search term "${searchTerm}":`, order.slice(0, 50), '...');
-        res.status(200).json({ message: 'Item order saved successfully.' });
-    } else {
-        res.status(400).json({ message: 'Invalid data format for order or searchTerm.' });
+    const { draggedId, targetId } = req.body;
+    if (typeof draggedId === 'number' && typeof targetId === 'number') {
+        const newOrder = [...serverState.globalItemOrder];
+        const draggedIndex = newOrder.indexOf(draggedId);
+        const targetIndex = newOrder.indexOf(targetId);
+        if (draggedIndex !== -1 && targetIndex !== -1) {
+            const [removed] = newOrder.splice(draggedIndex, 1);
+            newOrder.splice(targetIndex, 0, removed);
+            serverState.globalItemOrder = newOrder;
+            console.log('Global item order updated.');
+            res.status(200).json({ message: 'Global item order updated successfully.' });
+            return;
+        }
     }
+    res.status(400).json({ message: 'Invalid data for sorting.' });
 });
 
 app.get('/api/initial-state', (req, res) => {
     const limit = 20;
-    const initialSearchTerm = serverState.lastActiveSearchTerm; // Get last active search from state
-
-    let itemsForInitialLoad: Item[] = [...ALL_ITEMS];
+    const initialSearchTerm = serverState.lastActiveSearchTerm;
+    let itemsForInitialLoad: Item[] = applyGlobalOrder(ALL_ITEMS, serverState.globalItemOrder);
     if (initialSearchTerm) {
         itemsForInitialLoad = itemsForInitialLoad.filter(item => item.value.toString().includes(initialSearchTerm.toLowerCase()));
     }
-    const activeOrder = serverState.dragDropOrder.get(initialSearchTerm.toLowerCase());
-    if (activeOrder && activeOrder.length > 0) {
-        itemsForInitialLoad = applyOrder(itemsForInitialLoad, activeOrder);
-    }
-
     const initialItemsToReturn = itemsForInitialLoad.slice(0, limit);
-
     res.json({
         selectedItemIds: Array.from(serverState.selectedItemIds),
         initialItems: initialItemsToReturn,
@@ -140,8 +136,8 @@ app.post('/api/set-active-search-term', (req, res) => {
 });
 
 app.post('/api/reset-sort-order', (req, res) => {
-    serverState.dragDropOrder.delete(''); // Reset only global order by deleting the key for empty string
-    console.log('Global sort order reset.');
+    serverState.globalItemOrder = ALL_ITEMS.map(item => item.id);
+    console.log('Global sort order reset to default.');
     res.status(200).json({ message: 'Global sort order reset successfully.' });
 });
 
