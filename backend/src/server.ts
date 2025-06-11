@@ -41,37 +41,29 @@ const getItemById = (id: number): Item | undefined => {
     return undefined;
 };
 
-const applyGlobalOrder = (items: Item[], orderIds: number[]): Item[] => {
-    const itemMap = new Map<number, Item>();
-    items.forEach(item => itemMap.set(item.id, item));
-    const result: Item[] = [];
-    const seenIds = new Set<number>();
-    for (const id of orderIds) {
-        const item = itemMap.get(id);
-        if (item) {
-            result.push(item);
-            seenIds.add(id);
-        }
-    }
-    for (const item of items) {
-        if (!seenIds.has(item.id)) {
-            result.push(item);
-        }
-    }
-    return result;
-};
-
 app.get('/api/items', (req, res) => {
     const page = parseInt(req.query.page as string || '0');
     const limit = parseInt(req.query.limit as string || '20');
     const searchTerm = (req.query.search as string || '').toLowerCase();
-    let workingItems: Item[] = applyGlobalOrder(ALL_ITEMS, serverState.globalItemOrder);
+
+    let currentOrderedGlobalItems: Item[] = [];
+    for (const id of serverState.globalItemOrder) {
+        const item = getItemById(id);
+        if (item) {
+            currentOrderedGlobalItems.push(item);
+        }
+    }
+
+    let workingItems: Item[] = currentOrderedGlobalItems;
+
     if (searchTerm) {
         workingItems = workingItems.filter(item => item.value.toString().includes(searchTerm));
     }
+
     const startIndex = page * limit;
     const endIndex = startIndex + limit;
     const paginatedItems = workingItems.slice(startIndex, endIndex);
+
     res.json({
         items: paginatedItems,
         total: workingItems.length,
@@ -96,6 +88,7 @@ app.post('/api/save-order', (req, res) => {
         const newOrder = [...serverState.globalItemOrder];
         const draggedIndex = newOrder.indexOf(draggedId);
         const targetIndex = newOrder.indexOf(targetId);
+
         if (draggedIndex !== -1 && targetIndex !== -1) {
             const [removed] = newOrder.splice(draggedIndex, 1);
             newOrder.splice(targetIndex, 0, removed);
@@ -111,11 +104,24 @@ app.post('/api/save-order', (req, res) => {
 app.get('/api/initial-state', (req, res) => {
     const limit = 20;
     const initialSearchTerm = serverState.lastActiveSearchTerm;
-    let itemsForInitialLoad: Item[] = applyGlobalOrder(ALL_ITEMS, serverState.globalItemOrder);
+
+
+    let currentOrderedGlobalItems: Item[] = [];
+    for (const id of serverState.globalItemOrder) {
+        const item = getItemById(id);
+        if (item) {
+            currentOrderedGlobalItems.push(item);
+        }
+    }
+
+    let itemsForInitialLoad: Item[] = currentOrderedGlobalItems;
+
     if (initialSearchTerm) {
         itemsForInitialLoad = itemsForInitialLoad.filter(item => item.value.toString().includes(initialSearchTerm.toLowerCase()));
     }
+    
     const initialItemsToReturn = itemsForInitialLoad.slice(0, limit);
+
     res.json({
         selectedItemIds: Array.from(serverState.selectedItemIds),
         initialItems: initialItemsToReturn,
