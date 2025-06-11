@@ -124,16 +124,17 @@ const ItemList: React.FC = () => {
                 console.error("Failed to set active search term:", error);
             }
 
-            if (searchTerm === '') {
-                try {
-                    await fetch(`${API_BASE_URL}/reset-sort-order`, {
-                        method: 'POST',
-                    });
-                    console.log('Global sort order reset on backend due to search clear.');
-                } catch (error) {
-                    console.error("Failed to reset sort order:", error);
-                }
-            }
+            // --- REMOVED: Automatic call to reset-sort-order when search is cleared ---
+            // if (searchTerm === '') {
+            //     try {
+            //         await fetch(`${API_BASE_URL}/reset-sort-order`, {
+            //             method: 'POST',
+            //         });
+            //         console.log('Global sort order reset on backend due to search clear.');
+            //     } catch (error) {
+            //         console.error("Failed to reset sort order:", error);
+            //     }
+            // }
 
             setItems([]);
             fetchPaginatedItems(0, searchTerm);
